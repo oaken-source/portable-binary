@@ -1,0 +1,9 @@
+
+# generated intermediate code
+*.bc
+*.ll
+
+# build artefacts
+*.o
+*.flat
+*.resolution.txt

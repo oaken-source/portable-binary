@@ -1,0 +1,23 @@
+#!/bin/bash
+
+binary=$1
+shift
+
+dotbinary=$(dirname "$binary")/.$(basename "$binary")
+
+die() {
+	echo "failed to migrate arch:" >&2
+	cat "$dotbinary".log >&2
+	exit 55
+}
+
+cp "$binary" "$dotbinary".backup
+readelf -x .llvmbc "$binary" | tail -n+3 | \
+	cut -d' ' -f4-7 | xxd -r -p > "$dotbinary".bc
+clang -o "$dotbinary".flat "$dotbinary".bc &> "$dotbinary".log || die
+objcopy --add-section .llvmbc="$dotbinary".bc \
+	--set-section-flags .llvmbc=noload,readonly \
+	"$dotbinary".flat "$binary" || die
+rm -f "$dotbinary".{flat,bc}
+
+exec "$binary"

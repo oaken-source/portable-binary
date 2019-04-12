@@ -1,0 +1,98 @@
+
+Portability Experiments for LLVM Intermediate Representation
+============================================================
+
+This project is an attempt to produce 'slim' binaries from C code, that provide
+a basic support for cross-ISA portability, by embedding LLVM intermediate
+representation in the binary, and recompiling that intermediate representation
+on the fly if necessary.
+
+Compiling
+---------
+
+Short of patching clang to directly embed the intermediate representation into
+the binary[1], the most straightforward way to produce a binary with embedded
+intermediate representation is a two step process:
+
+1.) compile as normal, adding to CFLAGS "-flto -Wl,-plugin-opt=save-temps"
+
+This will produce for every produced binary a number of files containing binary
+information about the intermediate representation in various different stages
+of processing.
+
+Alternatively, to create a human readable version of the intermediate
+representation, add to CFLAGS "-emit-llvm -S" and examine the created *.ll file.
+
+2.) use objcopy to add a .llvmbc section in the generated binary file
+
+This will produce a binary that will work as usual, but contains an additional
+section that contains the binary representation of the LLVM intermediate
+representation.
+
+This process is outlined in the the example Makefile in `compiling/'.
+
+Executing
+---------
+
+The generated binaries can be executed normally on the architecture they were
+compiled for. On other architectures, a helper program is needed. The linux
+kernel provides the `binfmt_misc' interface, which, in conjunction with the
+`binfmt.d' service, allows exec system calls to work on arbitrary file formats
+by invoking a helper program.
+
+This functionality can be utilized to trigger a binary recompile of the
+embedded intermediate representation when a mismatched architecture header is
+detected.
+
+For this, a matching `binfmt.d' configuration needs to be provided, as well as
+a short script that triggers the recompilation. Simple examples for both of
+these are provided in the `executing/' directory.
+
+The challenge here is identifying a binary that needs recompiling from the ELF
+header. Currently, this approach requires explicitly stating the source
+architecture in the configuration, meaning that one configuration needs to be
+created for each known source architecture.
+
+This limitation may or may not go away in the future, for example through
+introducing a dedicated exec handler to the Linux kernel.
+
+The helper program that is executed instead of the actual binary can then
+extract the intermediate representation from the .llvmbc section using
+`readelf', and then recompile the program to work on the current architecture
+if clang is installed on the system.
+
+Observations
+------------
+
+When treating LLVM intermediate representation as portable, recompilable code,
+then while a simple hello world program will function correctly, there are a
+number of more or less obvious caveats, that are outlined below. (this list is
+not exhaustive)
+
+Complete source code scenarios for the described caveats are included in the
+directory `compiling/examples/caveat*.c'.
+
+1.) Inline Assembly
+
+	__asm__ ( /* ... */ );
+
+2.) Preprocessor directives
+
+	#ifdef __x86_64__
+	#if (__x86_64__)
+	if (__x86_64__) { /*... */ }
+
+3.) ...
+
+which compiles to
+
+	if (1)
+
+on x86_64
+
+Further Reading & References
+---------------
+
+ [1] - https://reviews.llvm.org/D17392
+     - https://jonasdevlieghere.com/embedded-bitcode/
+     - https://en.wikipedia.org/wiki/Executable_and_Linkable_Format
